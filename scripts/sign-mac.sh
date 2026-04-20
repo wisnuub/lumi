@@ -8,7 +8,7 @@ echo "→ Building for $ARCH..."
 npm run build
 
 echo "→ Packaging..."
-npx electron-builder --mac dir --$ARCH --publish never
+npx electron-builder --mac dir --$ARCH --publish never --config electron-builder.config.js
 
 if [ "$ARCH" = "arm64" ]; then
   APPDIR="dist/mac-arm64"
