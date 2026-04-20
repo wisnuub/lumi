@@ -7,6 +7,7 @@ import { spawn } from 'child_process'
 import https from 'https'
 import http from 'http'
 import type { IncomingMessage, ClientRequest } from 'http'
+import { runConnectors } from './connectors'
 
 const MODELS_DIR = join(app.getPath('userData'), 'models')
 if (!existsSync(MODELS_DIR)) mkdirSync(MODELS_DIR, { recursive: true })
@@ -255,6 +256,12 @@ ipcMain.handle('tool:list-dir', (_e, path: string) => {
       })
     }
   } catch (e: any) { return { ok: false, error: e.message } }
+})
+
+// ─── Connectors ───────────────────────────────────────────────────────────────
+
+ipcMain.handle('connectors:search', async (_e, { connectors, query }: { connectors: string[]; query: string }) => {
+  return runConnectors(connectors, query)
 })
 
 ipcMain.handle('dialog:open-folder', async () => {

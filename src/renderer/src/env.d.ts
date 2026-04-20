@@ -18,6 +18,7 @@ interface Window {
     writeFile: (path: string, content: string) => Promise<{ ok: boolean; error?: string }>
     runShell: (command: string, cwd: string) => Promise<{ ok: boolean; stdout: string; stderr: string; code: number; error?: string }>
     listDir: (path: string) => Promise<{ ok: boolean; entries: Array<{ name: string; isDir: boolean; size: number }>; error?: string }>
-    openFolder: () => Promise<string | null>
+    openFolder:      () => Promise<string | null>
+    connectorSearch: (connectors: string[], query: string) => Promise<Record<string, Array<{ title: string; url?: string; snippet: string; source: string }>>>
   }
 }

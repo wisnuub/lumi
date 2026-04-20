@@ -24,7 +24,8 @@ const api = {
   writeFile:  (path: string, content: string)       => ipcRenderer.invoke('tool:write-file', { path, content }),
   runShell:   (command: string, cwd: string)        => ipcRenderer.invoke('tool:run-shell', { command, cwd }),
   listDir:    (path: string)                        => ipcRenderer.invoke('tool:list-dir', path),
-  openFolder: ()                                    => ipcRenderer.invoke('dialog:open-folder'),
+  openFolder:       ()                                          => ipcRenderer.invoke('dialog:open-folder'),
+  connectorSearch:  (connectors: string[], query: string)       => ipcRenderer.invoke('connectors:search', { connectors, query }),
 }
 
 if (process.contextIsolated) {

@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { ModelDef, ChatMessage, ToolCall, ToolName } from '../types'
+import ConnectorBar, { CONNECTORS } from './ConnectorBar'
 
 interface Props {
-  model: ModelDef
+  model:     ModelDef
   workspace: string
 }
 
@@ -59,16 +60,17 @@ function parseToolCall(text: string): { tool: ToolName; args: Record<string, str
 }
 
 export default function ChatView({ model, workspace }: Props) {
-  const [messages, setMessages] = useState<ChatMessage[]>([{
-    id: uid(),
-    role: 'assistant',
-    content: `Hi! I'm running **${model.name}** locally.\n\nI can read/write files, run shell and git commands, and help with any coding task. What would you like to work on?`,
+  const [messages,      setMessages]      = useState<ChatMessage[]>([{
+    id: uid(), role: 'assistant',
+    content: `Hi! I'm running **${model.name}** locally.\n\nI can read/write files, run shell & git commands, and search the web. Toggle source connectors below to give me live context. What would you like to work on?`,
   }])
-  const [input, setInput] = useState('')
-  const [generating, setGenerating] = useState(false)
-  const [pendingTool, setPendingTool] = useState<{ msgId: string; tool: ToolCall } | null>(null)
-  const bottomRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const [input,         setInput]         = useState('')
+  const [generating,    setGenerating]    = useState(false)
+  const [pendingTool,   setPendingTool]   = useState<{ msgId: string; tool: ToolCall } | null>(null)
+  const [activeConns,   setActiveConns]   = useState<Set<string>>(new Set())
+  const [busyConns,     setBusyConns]     = useState<Set<string>>(new Set())
+  const bottomRef  = useRef<HTMLDivElement>(null)
+  const inputRef   = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -141,9 +143,40 @@ export default function ChatView({ model, workspace }: Props) {
     resolve?.(allowed)
   }
 
+  // ─── Connector fetch ─────────────────────────────────────────────────────────
+
+  const fetchConnectorContext = useCallback(async (query: string): Promise<string> => {
+    if (activeConns.size === 0) return ''
+    const ids = [...activeConns]
+    setBusyConns(new Set(ids))
+    try {
+      const results = await window.api.connectorSearch(ids, query)
+      let ctx = ''
+      for (const id of ids) {
+        const items = results[id] || []
+        if (!items.length) continue
+        const def = CONNECTORS.find(c => c.id === id)
+        ctx += `\n[${def?.icon ?? ''} ${def?.label ?? id} Results]\n`
+        for (const r of items) {
+          ctx += `• ${r.title}${r.url ? ` — ${r.url}` : ''}\n`
+          if (r.snippet) ctx += `  ${r.snippet.slice(0, 280)}\n`
+        }
+      }
+      return ctx.trim()
+    } finally {
+      setBusyConns(new Set())
+    }
+  }, [activeConns])
+
   // ─── Agent turn ───────────────────────────────────────────────────────────
 
   const runAgentTurn = useCallback(async (userText: string) => {
+    // Fetch connector context first, then prepend to prompt
+    const connCtx = await fetchConnectorContext(userText)
+    const promptText = connCtx
+      ? `[Context from active sources]\n${connCtx}\n\n---\nUser: ${userText}`
+      : userText
+
     setGenerating(true)
 
     // Add streaming assistant message
@@ -170,7 +203,7 @@ export default function ChatView({ model, workspace }: Props) {
         })
         resolve()
       })
-      window.api.sendMessage(userText)
+      window.api.sendMessage(promptText)
     })
 
     // Stop streaming indicator
@@ -251,7 +284,7 @@ export default function ChatView({ model, workspace }: Props) {
     setInput('')
     const userMsg: ChatMessage = { id: uid(), role: 'user', content: text }
     setMessages(prev => [...prev, userMsg])
-    runAgentTurn(text)
+    runAgentTurn(text)   // connector fetch + model call happens inside
   }
 
   const handleKey = (e: React.KeyboardEvent) => {
@@ -308,6 +341,13 @@ export default function ChatView({ model, workspace }: Props) {
         ))}
         <div ref={bottomRef} />
       </div>
+
+      {/* Connector bar */}
+      <ConnectorBar
+        active={activeConns}
+        onChange={setActiveConns}
+        busy={busyConns}
+      />
 
       {/* Input bar */}
       <div className="chat-input-wrap">
