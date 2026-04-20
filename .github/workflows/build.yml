@@ -12,7 +12,7 @@ permissions:
 jobs:
   build-mac:
     name: Build macOS
-    runs-on: macos-14          # Apple Silicon (M1/M2)
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
 
@@ -24,37 +24,81 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
+      - name: Build renderer
         run: npm run build
 
-      - name: Package (arm64 + x64)
-        run: npx electron-builder --mac --arm64 --x64
+      - name: Package app (arm64)
+        run: npx electron-builder --mac dir --arm64 --publish never
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: false   # no signing — prevents "damaged" error
+          CSC_IDENTITY_AUTO_DISCOVERY: false
 
-      - name: Strip quarantine from DMGs
+      - name: Package app (x64)
+        run: npx electron-builder --mac dir --x64 --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Sign apps (ad-hoc + entitlements)
         run: |
-          for f in dist/*.dmg; do
-            xattr -cr "$f" || true
+          cat > local-ai.entitlements <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>com.apple.security.cs.allow-jit</key><true/>
+            <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
+            <key>com.apple.security.cs.disable-library-validation</key><true/>
+          </dict></plist>
+          EOF
+
+          for app in dist/mac-arm64/*.app dist/mac/*.app; do
+            [ -e "$app" ] || continue
+            codesign \
+              --entitlements local-ai.entitlements \
+              --force \
+              --deep \
+              --sign - \
+              "$app"
+            echo "Signed: $app"
+          done
+
+      - name: Create DMGs
+        run: |
+          for arch in arm64 x64; do
+            if [ "$arch" = "arm64" ]; then
+              appdir="dist/mac-arm64"
+            else
+              appdir="dist/mac"
+            fi
+
+            app=$(find "$appdir" -maxdepth 1 -name "*.app" | head -1)
+            [ -n "$app" ] || continue
+
+            STAGING=$(mktemp -d)
+            cp -r "$app" "$STAGING/"
+            ln -s /Applications "$STAGING/Applications"
+
+            hdiutil create \
+              -volname "local-ai" \
+              -srcfolder "$STAGING" \
+              -ov -format UDZO \
+              -imagekey zlib-level=9 \
+              "dist/local-ai-${{ github.ref_name }}-${arch}.dmg"
+
+            rm -rf "$STAGING"
+            echo "Created DMG for $arch"
           done
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: mac-dist
-          path: |
-            dist/*.dmg
-            dist/*.zip
+          path: dist/local-ai-*.dmg
           if-no-files-found: error
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/*.dmg
-            dist/*.zip
+          files: dist/local-ai-*.dmg
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -72,27 +116,68 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
+      - name: Build renderer
         run: npm run build
 
       - name: Package (x64)
-        run: npx electron-builder --win --x64
+        run: npx electron-builder --win --x64 --publish never
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-dist
-          path: |
-            dist/*.exe
+          path: dist/*.exe
           if-no-files-found: error
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
+          files: dist/*.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  release:
+    name: Create Release
+    needs: [build-mac, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: mac-dist
+          path: artifacts/mac
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-dist
+          path: artifacts/win
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          body: |
+            ## local-ai ${{ github.ref_name }}
+
+            | Platform | Download |
+            |---|---|
+            | macOS Apple Silicon (M1/M2/M3) | `local-ai-*-arm64.dmg` |
+            | macOS Intel | `local-ai-*-x64.dmg` |
+            | Windows | `local-ai-*.exe` |
+
+            ### First run
+            - **macOS** — right-click → Open if Gatekeeper prompts, then Open again to confirm
+            - **Windows** — click "More info → Run anyway" if SmartScreen appears
           files: |
-            dist/*.exe
+            artifacts/mac/*.dmg
+            artifacts/win/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

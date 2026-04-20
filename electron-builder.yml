@@ -14,10 +14,11 @@ asarUnpack:
   - "node_modules/node-llama-cpp/src/**"
 
 mac:
-  identity: null          # no code signing — avoids "damaged" error
+  identity: null
   gatekeeperAssess: false
+  hardenedRuntime: false
   target:
-    - target: dmg
+    - target: dir          # output .app directory; workflow signs + creates DMG manually
       arch:
         - arm64
         - x64
