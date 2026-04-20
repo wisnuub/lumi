@@ -1,0 +1,42 @@
+appId: com.localai.app
+productName: local-ai
+directories:
+  buildResources: build
+  output: dist
+
+files:
+  - out/**/*
+  - "!out/**/*.map"
+
+asarUnpack:
+  - "node_modules/node-llama-cpp/bins/**"
+  - "node_modules/node-llama-cpp/llama/**"
+  - "node_modules/node-llama-cpp/src/**"
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+  category: public.app-category.developer-tools
+  icon: build/icon.icns
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+
+linux:
+  target:
+    - AppImage
+
+publish: null
