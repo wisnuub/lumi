@@ -10,7 +10,10 @@ interface Window {
     onDownloadDone: (cb: (data: { filename: string }) => void) => () => void
     onDownloadError: (cb: (data: { filename: string; error: string }) => void) => () => void
     loadModel: (filename: string) => Promise<{ ok: boolean; error?: string }>
-    chatInit:  (systemPrompt: string) => Promise<{ ok: boolean; error?: string }>
+    chatInit:        (systemPrompt: string) => Promise<{ ok: boolean; error?: string }>
+    chatSetApi:      (cfg: { provider: string; baseUrl: string; modelId: string; apiKey: string }) => Promise<{ ok: boolean }>
+    chatClearApi:    () => Promise<{ ok: boolean }>
+    chatResetHistory:() => Promise<{ ok: boolean }>
     sendMessage: (message: string) => void
     onChatToken: (cb: (token: string) => void) => () => void
     onChatDone: (cb: () => void) => () => void

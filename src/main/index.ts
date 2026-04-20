@@ -8,6 +8,7 @@ import https from 'https'
 import http from 'http'
 import type { IncomingMessage, ClientRequest } from 'http'
 import { runConnectors } from './connectors'
+import { setApiConfig, setApiSystemPrompt, streamApiChat, isApiMode, clearApiMode, resetApiHistory } from './api-inference'
 import {
   isBinReady, downloadBinary, scanLoras, scanImageModels,
   generate, cancelGeneration, IMG_MODEL_DIR, LORA_DIR, IMG_OUT_DIR,
@@ -210,6 +211,10 @@ ipcMain.handle('models:load', async (_e, filename: string) => {
 })
 
 ipcMain.handle('chat:init', async (_e, systemPrompt: string) => {
+  if (isApiMode()) {
+    setApiSystemPrompt(systemPrompt)
+    return { ok: true }
+  }
   try {
     if (!currentContext) return { ok: false, error: 'No model loaded' }
     const { LlamaChatSession } = await import('node-llama-cpp')
@@ -223,7 +228,34 @@ ipcMain.handle('chat:init', async (_e, systemPrompt: string) => {
   }
 })
 
+ipcMain.handle('chat:set-api', (_e, config: { provider: string; baseUrl: string; modelId: string; apiKey: string }) => {
+  setApiConfig(config)
+  clearApiMode()   // will be re-enabled by setApiConfig
+  setApiConfig(config)
+  return { ok: true }
+})
+
+ipcMain.handle('chat:clear-api', () => {
+  clearApiMode()
+  return { ok: true }
+})
+
+ipcMain.handle('chat:reset-history', () => {
+  resetApiHistory()
+  return { ok: true }
+})
+
 ipcMain.on('chat:send', async (event, { message }: { message: string }) => {
+  // Route to API or local inference
+  if (isApiMode()) {
+    streamApiChat(
+      message,
+      (token) => event.reply('chat:token', token),
+      ()      => event.reply('chat:done'),
+      (err)   => event.reply('chat:error', err),
+    )
+    return
+  }
   if (!currentSession) { event.reply('chat:error', 'No model loaded.'); return }
   try {
     await currentSession.prompt(message, {

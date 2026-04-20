@@ -11,6 +11,9 @@ const api = {
   cancelDownload:  (filename: string) => ipcRenderer.invoke('models:cancel', filename),
   loadModel:       (filename: string) => ipcRenderer.invoke('models:load', filename),
   chatInit:        (systemPrompt: string) => ipcRenderer.invoke('chat:init', systemPrompt),
+  chatSetApi:      (cfg: { provider: string; baseUrl: string; modelId: string; apiKey: string }) => ipcRenderer.invoke('chat:set-api', cfg),
+  chatClearApi:    ()                     => ipcRenderer.invoke('chat:clear-api'),
+  chatResetHistory:()                     => ipcRenderer.invoke('chat:reset-history'),
 
   onDownloadProgress: (cb: (d: any) => void) => { ipcRenderer.on('models:download-progress', (_e, d) => cb(d)); return () => ipcRenderer.removeAllListeners('models:download-progress') },
   onDownloadDone:     (cb: (d: any) => void) => { ipcRenderer.on('models:download-done',     (_e, d) => cb(d)); return () => ipcRenderer.removeAllListeners('models:download-done') },

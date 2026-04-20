@@ -38,10 +38,24 @@ export interface ToolCall {
   error?: string
 }
 
+export interface TodoItem {
+  id: string
+  text: string
+  done: boolean
+}
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant' | 'system'
   content: string
   toolCalls?: ToolCall[]
+  todos?: TodoItem[]
   streaming?: boolean
+}
+
+export interface DiffFile {
+  path: string
+  added: number
+  removed: number
+  hunks: string   // raw unified diff for this file
 }
