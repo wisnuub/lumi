@@ -58,7 +58,15 @@ export default function ImageGen() {
     })
     const off3 = window.api.onImgError((e: string) => { setError(e); setGenerating(false); setProgress(null) })
     const off4 = window.api.onImgBinProgress(({ progress: p }: any) => setBinProgress(p))
-    return () => { off1(); off2(); off3(); off4() }
+    const off5 = window.api.onImgBinDone(() => {
+      setBinStatus('ready')
+      setBinProgress(1)
+    })
+    const off6 = window.api.onImgBinError((e: string) => {
+      setBinStatus('missing')
+      setError(`Engine download failed: ${e}`)
+    })
+    return () => { off1(); off2(); off3(); off4(); off5(); off6() }
   }, [prompt])
 
   const refreshModels = () => {
