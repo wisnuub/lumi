@@ -385,6 +385,38 @@ pre { font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, mon
 .cursor { animation: blink 0.8s step-end infinite; color: var(--accent); }
 @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
 
+/* Thinking indicator */
+.thinking-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+.thinking-label {
+  font-size: 13px;
+  color: var(--text3);
+  font-style: italic;
+}
+.thinking-dots {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.thinking-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.3;
+  animation: thinking-bounce 1.2s ease-in-out infinite;
+}
+.thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes thinking-bounce {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+  40%           { opacity: 1;   transform: scale(1.2); }
+}
+
 /* Tool card */
 .tool-card {
   border: 1px solid var(--border2);
