@@ -209,10 +209,37 @@ function isReasonerModel(name: string) {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
+interface StoredSession {
+  id: string
+  title: string
+  messages: ChatMessage[]
+  createdAt: number
+}
+
+function sessionTitle(msgs: ChatMessage[]): string {
+  const first = msgs.find(m => m.role === 'user')
+  return first ? first.content.slice(0, 48) : 'New chat'
+}
+
+function fmtSessionDate(ts: number): string {
+  const d = new Date(ts)
+  const now = new Date()
+  const diff = (now.getTime() - d.getTime()) / 1000
+  if (diff < 60)   return 'just now'
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  return d.toLocaleDateString()
+}
+
 export default function ChatView({ modelName, modelType, workspace, duoReasonerName, chatMode, onChatModeChange }: Props) {
   const isThinkingModel = modelName.toLowerCase().includes('qwen3') || modelName.toLowerCase().includes('deepseek-r1')
   const isReasoner      = modelType !== 'duo' && isReasonerModel(modelName)
   const [layout,       setLayout]       = useState<Layout>(() => (localStorage.getItem('chatLayout') as Layout) ?? 'combined')
+  const [sidebarOpen,  setSidebarOpen]  = useState(false)
+  const [sessions,     setSessions]     = useState<StoredSession[]>(() => {
+    try { return JSON.parse(localStorage.getItem('lumiSessions') || '[]') } catch { return [] }
+  })
+  const [activeSessionId, setActiveSessionId] = useState<string>(() => uid())
   const [showContext,  setShowContext]   = useState(false)
   const [messages,     setMessages]     = useState<ChatMessage[]>([{
     id: uid(), role: 'assistant',
@@ -269,6 +296,29 @@ export default function ChatView({ modelName, modelType, workspace, duoReasonerN
     const sysPrompt = chatMode === 'chat' ? makeChatSystemPrompt() : makeAgentSystemPrompt(workspace)
     window.api.chatInit(sysPrompt)
   }, [workspace, chatMode])
+
+  // Auto-save current session whenever messages change
+  useEffect(() => {
+    const userMsgs = messages.filter(m => m.role === 'user')
+    if (userMsgs.length === 0) return
+    const saved = messages.map(m => ({ ...m, streaming: false }))
+    setSessions(prev => {
+      const existing = prev.find(s => s.id === activeSessionId)
+      if (existing) {
+        return prev.map(s => s.id === activeSessionId
+          ? { ...s, title: sessionTitle(saved), messages: saved }
+          : s
+        )
+      }
+      const next = [{ id: activeSessionId, title: sessionTitle(saved), messages: saved, createdAt: Date.now() }, ...prev]
+      return next.slice(0, 30) // cap at 30 sessions
+    })
+  }, [messages, activeSessionId])
+
+  // Persist sessions to localStorage
+  useEffect(() => {
+    localStorage.setItem('lumiSessions', JSON.stringify(sessions))
+  }, [sessions])
 
   // Reset session stats whenever the active model changes
   useEffect(() => {
@@ -636,32 +686,46 @@ export default function ChatView({ modelName, modelType, workspace, duoReasonerN
     else runAgentTurn(prompt)
   }, [generating, chatMode, runChatTurn, runAgentTurn])
 
-  // ─── New chat ─────────────────────────────────────────────────────────────
+  // ─── Session helpers ──────────────────────────────────────────────────────
 
-  const newChat = useCallback(() => {
-    window.api.chatResetHistory()
-    const welcome = modelType === 'duo'
+  const makeWelcome = useCallback(() =>
+    modelType === 'duo'
       ? `Duo mode active. **${duoReasonerName}** will plan, then I'll execute with tools.\n\nTell me what to build or fix.`
       : isReasoner
         ? `Hi! I'm **${modelName}**.\n\nI'm a reasoning model — best at analysis, planning, and complex thinking. I'm in **Chat mode** (no tools).\n\nFor coding tasks with file access, use me as the **Planner in Duo Mode** paired with a fast Groq model.`
         : `Hi! I'm **${modelName}**${modelType === 'api' ? ' via cloud' : ' running locally'}.\n\nTell me what to do — I'll explore your workspace, read files, make changes, and track progress with a todo list.`
-    setMessages([{ id: uid(), role: 'assistant', content: welcome }])
+  , [modelName, modelType, isReasoner, duoReasonerName])
+
+  const resetStats = useCallback(() => setStats({
+    sessionStart: new Date(), lastActivity: new Date(),
+    userMessages: 0, assistantMessages: 0,
+    totalTokens: 0, inputTokens: 0, outputTokens: 0,
+    reasoningTokens: 0, cacheRead: 0, totalCostUsd: 0,
+    contextLimit: getContextLimit(modelName),
+  }), [modelName])
+
+  const newChat = useCallback(() => {
+    window.api.chatResetHistory()
+    setActiveSessionId(uid())
+    setMessages([{ id: uid(), role: 'assistant', content: makeWelcome() }])
     setTodos([])
-    setStats({
-      sessionStart:      new Date(),
-      lastActivity:      new Date(),
-      userMessages:      0,
-      assistantMessages: 0,
-      totalTokens:       0,
-      inputTokens:       0,
-      outputTokens:      0,
-      reasoningTokens:   0,
-      cacheRead:         0,
-      totalCostUsd:      0,
-      contextLimit:      getContextLimit(modelName),
-    })
+    resetStats()
     lastPromptRef.current = ''
-  }, [modelName, modelType, isReasoner, duoReasonerName])
+  }, [makeWelcome, resetStats])
+
+  const switchSession = useCallback((session: StoredSession) => {
+    window.api.chatResetHistory()
+    setActiveSessionId(session.id)
+    setMessages(session.messages)
+    setTodos([])
+    resetStats()
+    lastPromptRef.current = ''
+  }, [resetStats])
+
+  const deleteSession = useCallback((id: string) => {
+    setSessions(prev => prev.filter(s => s.id !== id))
+    if (id === activeSessionId) newChat()
+  }, [activeSessionId, newChat])
 
   // ─── Submit ───────────────────────────────────────────────────────────────
 
@@ -688,6 +752,11 @@ export default function ChatView({ modelName, modelType, workspace, duoReasonerN
 
   const topBar = (
     <div className="chat-topbar">
+      <button
+        className={`sidebar-toggle ${sidebarOpen ? 'sidebar-toggle--open' : ''}`}
+        onClick={() => setSidebarOpen(v => !v)}
+        title={sidebarOpen ? 'Close chat history' : 'Open chat history'}
+      >≡</button>
       <div className="mode-pills">
         <button className={`mode-pill ${chatMode === 'chat' ? 'mode-pill--active' : ''}`} onClick={() => onChatModeChange('chat')}>💬 Chat</button>
         <button
@@ -816,6 +885,37 @@ export default function ChatView({ modelName, modelType, workspace, duoReasonerN
 
   return (
     <div className="chat-root">
+      {/* Session sidebar */}
+      <div className={`session-sidebar ${sidebarOpen ? 'session-sidebar--open' : ''}`}>
+        <div className="session-sidebar-header">
+          <span className="session-sidebar-title">Chats</span>
+          <button className="session-new-btn" onClick={newChat} title="New chat">＋</button>
+        </div>
+        <div className="session-list">
+          {sessions.length === 0 && (
+            <p className="session-empty">No saved chats yet</p>
+          )}
+          {sessions.map(s => (
+            <div
+              key={s.id}
+              className={`session-item ${s.id === activeSessionId ? 'session-item--active' : ''}`}
+              onClick={() => switchSession(s)}
+            >
+              <div className="session-item-body">
+                <span className="session-item-title">{s.title}</span>
+                <span className="session-item-date">{fmtSessionDate(s.createdAt)}</span>
+              </div>
+              <button
+                className="session-del-btn"
+                onClick={e => { e.stopPropagation(); deleteSession(s.id) }}
+                title="Delete"
+              >×</button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="chat-root-main">
       {showContext && (
         <ContextPanel stats={stats} messages={messages} modelName={modelName} onClose={() => setShowContext(false)} />
       )}
@@ -914,6 +1014,7 @@ export default function ChatView({ modelName, modelType, workspace, duoReasonerN
           </div>
         </>
       )}
+      </div>{/* end chat-root-main */}
     </div>
   )
 }

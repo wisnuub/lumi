@@ -47,8 +47,8 @@ function afterPack({ appOutDir, electronPlatformName, arch }) {
 
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
-  appId: 'com.localai.app',
-  productName: 'local-ai',
+  appId: 'com.lumi.app',
+  productName: 'Lumi',
   directories: {
     buildResources: 'build',
     output: 'dist',
